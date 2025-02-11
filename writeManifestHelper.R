@@ -1,3 +1,3 @@
 library(rsconnect)
 
-writeManifest()
+rsconnect::writeManifest()

@@ -1411,7 +1411,7 @@
   },
   "files": {
     ".Rprofile": {
-      "checksum": "386812ce198c2e36bee7db9ee20b876c"
+      "checksum": "214e90e58fce19cda43d171b45be27d8"
     },
     "app.R": {
       "checksum": "e1bd2598ed150ff1aaeac52465ce8dc9"
@@ -1420,7 +1420,7 @@
       "checksum": "86d3f3a95c324c9479bd8986968f4327"
     },
     "README.md": {
-      "checksum": "d8a02cfa0cced3decc51db8575627d41"
+      "checksum": "69d82eb155a95420e91cfd0916365655"
     },
     "renv.lock": {
       "checksum": "f5547b85539be8c470d2718bf9913912"
@@ -1429,7 +1429,7 @@
       "checksum": "d90434128034f2ba44b4baded984f394"
     },
     "writeManifestHelper.R": {
-      "checksum": "0c64ad283df9f951607382fa015ec5bc"
+      "checksum": "24cb191dbaed5ce5d6301e7904b4b85d"
     }
   },
   "users": null

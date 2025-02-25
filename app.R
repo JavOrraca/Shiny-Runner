@@ -1,14 +1,8 @@
-# Install packages if you haven't already:
-# install.packages("shiny")
-# install.packages("shinyjs")
-
 library(shiny)
 library(shinyjs)
 
 ui <- fluidPage(
-  # Include the Google Font Monofett and custom CSS.
   tags$head(
-    # Load Monofett from Google Fonts.
     tags$link(rel = "stylesheet", href = "https://fonts.googleapis.com/css?family=Monofett"),
     tags$style(HTML("
       body {
@@ -16,7 +10,6 @@ ui <- fluidPage(
         color: #fff;
         font-family: 'Courier New', Courier, monospace;
       }
-      /* Style for the header using Monofett */
       h1 {
         font-family: 'Monofett', cursive;
         text-align: center;
@@ -33,45 +26,34 @@ ui <- fluidPage(
       }
     "))
   ),
-  
-  # Header above the canvas.
+
   h1("Shiny Runner"),
-  
-  # The game canvas with a size of 1280 x 600.
+
   tags$canvas(id = "gameCanvas", width = 1280, height = 600),
-  
-  # Initialize shinyjs.
+
   useShinyjs(),
-  
-  # Inline JavaScript for the game logic.
+
   tags$script(HTML("
-    // Get the canvas element and its context.
     var canvas = document.getElementById('gameCanvas');
     var ctx = canvas.getContext('2d');
 
-    // Game constants.
     var gravity = 0.5;
-    var scrollSpeed = 2;           // How fast obstacles move left.
-    var obstacleFrequency = 150;   // Frames between new obstacles.
+    var scrollSpeed = 2;
+    var obstacleFrequency = 150;
     var frameCount = 0;
     var groundHeight = 50;
 
-    // Survival points: 1 point every 100ms.
     var points = 0;
     var lastPointUpdateTime = Date.now();
 
-    // Global array to store top three scores.
     var topScores = [];
 
-    // Variable to control the initial instructions display.
     var showInstructions = true;
-    // After 5 seconds, clear the instructions and reinitialize the point timer.
     setTimeout(function(){
       showInstructions = false;
       lastPointUpdateTime = Date.now();
     }, 5000);
 
-    // Define the player with additional properties for bird mode.
     var player = {
       x: 50,
       y: canvas.height - groundHeight - 20,
@@ -82,20 +64,21 @@ ui <- fluidPage(
       jumpForce: -10,
       speed: 4,
       onGround: true,
-      isBird: false
+      isBird: false,
+      birdModeEnding: false,
+      bloodSplat: false,
+      falling: false,
+      showSplatText: false,
+      gameOver: false
     };
 
-    // Variables for detecting rapid up-arrow presses.
     var upKeyCount = 0;
     var lastUpKeyTime = 0;
-    var keyThreshold = 300; // milliseconds between key presses to count as rapid
-
-    // Array to hold obstacles.
+    var keyThreshold = 300;
     var obstacles = [];
 
-    // Function to create a new obstacle.
     function createObstacle() {
-      var obstacleHeight = Math.floor(Math.random() * 30) + 20; // height between 20 and 50
+      var obstacleHeight = Math.floor(Math.random() * 30) + 20;
       var obstacle = {
         x: canvas.width,
         y: canvas.height - groundHeight - obstacleHeight,
@@ -105,40 +88,100 @@ ui <- fluidPage(
       obstacles.push(obstacle);
     }
 
-    // Update obstacles: move them left and remove those off-screen.
-    function updateObstacles() {
-      obstacles.forEach(function(obstacle) {
-        obstacle.x -= scrollSpeed;
+    function drawSplatText() {
+      const pixels = [
+        '  SSSSS  PPPP   L      AAA   TTTTT  !!',
+        ' S      P   P  L      A   A    T    !!',
+        '  SSS   PPPP   L      AAAAA    T    !!',
+        '     S  P      L      A   A    T    !!',
+        'SSSSS   P      LLLLL  A   A    T    !!',
+        '                                       ',
+        '                                    !!'
+      ];
+        ctx.fillStyle = '#ff0000';
+      const pixelSize = 20;
+      const startX = canvas.width/2 - (pixels[0].length * pixelSize)/2;
+      const startY = canvas.height/2 - (pixels.length * pixelSize)/2;
+
+      pixels.forEach((row, y) => {
+        [...row].forEach((char, x) => {
+          if (char !== ' ') {
+            ctx.fillRect(
+              startX + x * pixelSize,
+              startY + y * pixelSize,
+              pixelSize,
+              pixelSize
+          );
+        }
+        });
       });
+      }
+
+    function updateObstacles() {
+        obstacles.forEach(function(obstacle) {
+        obstacle.x -= scrollSpeed;
+        });
       obstacles = obstacles.filter(function(obstacle) {
         return obstacle.x + obstacle.width > 0;
       });
-    }
+      }
 
-    // Draw obstacles (red blocks).
     function drawObstacles() {
       ctx.fillStyle = '#f00';
-      obstacles.forEach(function(obstacle) {
+        obstacles.forEach(function(obstacle) {
         ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
       });
-    }
+}
 
-    // Draw the ground.
     function drawGround() {
       ctx.fillStyle = '#555';
       ctx.fillRect(0, canvas.height - groundHeight, canvas.width, groundHeight);
     }
 
-    // Draw the player.
-    // In normal mode, draw a green square.
-    // In bird mode, draw a cyan circle with a yellow beak.
     function drawPlayer() {
-      if (player.isBird) {
+      if (player.bloodSplat) {
+        ctx.fillStyle = '#ff0000';
+        ctx.beginPath();
+        ctx.arc(player.x + player.width/2, canvas.height - groundHeight, player.width * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        for (let i = 0; i < 12; i++) {
+          let angle = (Math.PI * 2 * i) / 12;
+          let distance = player.width * 2;
+          ctx.beginPath();
+          ctx.arc(
+            player.x + player.width/2 + Math.cos(angle) * distance,
+            canvas.height - groundHeight + Math.sin(angle) * distance,
+            player.width/3,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+        }
+        return;
+      }
+
+      if (player.falling) {
+        // Keep the bird appearance when falling
+        // Bird body
         ctx.fillStyle = '#0ff';
         ctx.beginPath();
         ctx.arc(player.x + player.width/2, player.y + player.height/2, player.width/2, 0, Math.PI * 2);
         ctx.fill();
         
+        // Bird wings
+        ctx.fillStyle = '#00cccc';
+        ctx.beginPath();
+        ctx.ellipse(
+          player.x + player.width/2, 
+          player.y + player.height/2 + 2, 
+          player.width/3, 
+          player.height/4, 
+          0, 0, Math.PI * 2
+        );
+        ctx.fill();
+        
+        // Bird beak
         ctx.fillStyle = '#ff0';
         ctx.beginPath();
         ctx.moveTo(player.x + player.width, player.y + player.height/2);
@@ -146,13 +189,84 @@ ui <- fluidPage(
         ctx.lineTo(player.x + player.width + 5, player.y + player.height/2 + 3);
         ctx.closePath();
         ctx.fill();
+        
+        // Bird eye
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(player.x + player.width/2 + 3, player.y + player.height/2 - 2, 2, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+
+      if (player.isBird) {
+        // Bird mode - blue bird with yellow beak
+        // Bird body
+        ctx.fillStyle = '#0ff';
+        ctx.beginPath();
+        ctx.arc(player.x + player.width/2, player.y + player.height/2, player.width/2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Bird wings
+        ctx.fillStyle = '#00cccc';
+        ctx.beginPath();
+        ctx.ellipse(
+          player.x + player.width/2, 
+          player.y + player.height/2 + 2, 
+          player.width/3, 
+          player.height/4, 
+          0, 0, Math.PI * 2
+        );
+        ctx.fill();
+        
+        // Bird beak
+        ctx.fillStyle = '#ff0';
+        ctx.beginPath();
+        ctx.moveTo(player.x + player.width, player.y + player.height/2);
+        ctx.lineTo(player.x + player.width + 5, player.y + player.height/2 - 3);
+        ctx.lineTo(player.x + player.width + 5, player.y + player.height/2 + 3);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Bird eye
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(player.x + player.width/2 + 3, player.y + player.height/2 - 2, 2, 0, Math.PI * 2);
+        ctx.fill();
       } else {
-        ctx.fillStyle = '#0f0';
-        ctx.fillRect(player.x, player.y, player.width, player.height);
+        // Retro 8-bit birdman
+        const pixelSize = 4;
+        const baseX = player.x;
+        const baseY = player.y;
+        
+        // Body (green)
+        ctx.fillStyle = '#0a0';
+        ctx.fillRect(baseX + 4, baseY + 8, 12, 12);
+        
+        // Head (flesh tone)
+        ctx.fillStyle = '#fca';
+        ctx.fillRect(baseX + 4, baseY, 12, 8);
+        
+        // Eyes (black)
+        ctx.fillStyle = '#000';
+        ctx.fillRect(baseX + 6, baseY + 2, 2, 2);
+        ctx.fillRect(baseX + 12, baseY + 2, 2, 2);
+        
+        // Beak/nose (yellow)
+        ctx.fillStyle = '#ff0';
+        ctx.fillRect(baseX + 9, baseY + 4, 2, 2);
+        
+        // Wings/arms (blue)
+        ctx.fillStyle = '#00f';
+        ctx.fillRect(baseX, baseY + 8, 4, 4);
+        ctx.fillRect(baseX + 16, baseY + 8, 4, 4);
+        
+        // Feet (orange)
+        ctx.fillStyle = '#f80';
+        ctx.fillRect(baseX + 4, baseY + 20, 4, 2);
+        ctx.fillRect(baseX + 12, baseY + 20, 4, 2);
       }
     }
 
-    // Draw the survival points counter in the top middle of the canvas.
     function drawPoints() {
       ctx.font = '20px Courier New';
       ctx.fillStyle = 'white';
@@ -160,7 +274,6 @@ ui <- fluidPage(
       ctx.fillText('Points: ' + points, canvas.width / 2, 30);
     }
 
-    // Draw the top three scores in the top right of the canvas.
     function drawHighScores() {
       ctx.font = '20px Courier New';
       ctx.fillStyle = 'white';
@@ -171,7 +284,13 @@ ui <- fluidPage(
       }
     }
 
-    // Draw the instructions message (if still enabled).
+    function drawGameOver() {
+      ctx.font = '48px Courier New';
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.fillText('Game Over - Press Space to Restart', canvas.width / 2, canvas.height - 100);
+    }
+
     function drawInstructions() {
       if (showInstructions) {
         ctx.font = '48px Courier New';
@@ -181,7 +300,6 @@ ui <- fluidPage(
       }
     }
 
-    // Basic rectangle collision detection.
     function checkCollision(rect1, rect2) {
       return !(rect1.x > rect2.x + rect2.width ||
                rect1.x + rect1.width < rect2.x ||
@@ -189,18 +307,19 @@ ui <- fluidPage(
                rect1.y + rect1.height < rect2.y);
     }
 
-    // Reset the game when a collision occurs.
-    // Note: Do not reset the instructions flag so the instructions only show on the very first launch.
     function resetGame() {
-      // Only record a score if the instructions are no longer showing.
       if (!showInstructions) {
         topScores.push(points);
-        // Sort scores descending and keep only the top three.
         topScores.sort(function(a, b) { return b - a; });
-        if (topScores.length > 3) { 
+        if (topScores.length > 3) {
           topScores = topScores.slice(0, 3);
         }
       }
+      player.gameOver = true;
+      drawGameOver();
+    }
+
+    function startNewGame() {
       obstacles = [];
       player.x = 50;
       player.y = canvas.height - groundHeight - player.height;
@@ -208,18 +327,63 @@ ui <- fluidPage(
       player.dy = 0;
       player.onGround = true;
       player.isBird = false;
+      player.bloodSplat = false;
+      player.birdModeEnding = false;
+      player.falling = false;
+      player.showSplatText = false;
+      player.gameOver = false;
       upKeyCount = 0;
-      // Reset survival points.
       points = 0;
       lastPointUpdateTime = Date.now();
     }
 
-    // Main game loop.
     function updateGame() {
       frameCount++;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Update survival points only if the instructions have cleared.
+      if (player.gameOver) {
+        drawGround();
+        drawGameOver();
+        return;
+      }
+
+      if (player.showSplatText) {
+        drawGround();
+        drawSplatText();
+        setTimeout(() => {
+          resetGame();
+        }, 2000);
+        return;
+      }
+
+      if (player.bloodSplat) {
+        drawGround();
+        drawPlayer();
+        drawPoints();
+        drawHighScores();
+        setTimeout(() => {
+          player.showSplatText = true;
+        }, 2000);
+        requestAnimationFrame(updateGame);
+        return;
+      }
+
+      if (player.falling) {
+        player.dy += gravity * 1.5;
+        player.y += player.dy;
+
+        if (player.y + player.height >= canvas.height - groundHeight) {
+          player.bloodSplat = true;
+        }
+
+        drawGround();
+        drawPlayer();
+        drawPoints();
+        drawHighScores();
+        requestAnimationFrame(updateGame);
+        return;
+      }
+
       if (!showInstructions) {
         var currentTime = Date.now();
         if (currentTime - lastPointUpdateTime >= 100) {
@@ -228,18 +392,19 @@ ui <- fluidPage(
         }
       }
 
-      // Update player's position.
       if (player.isBird) {
-        // In bird mode, update position based on dx/dy (direct control; no gravity).
         player.x += player.dx;
         player.y += player.dy;
+
+        if (player.y + player.height > canvas.height - groundHeight) {
+          player.y = canvas.height - groundHeight - player.height;
+          player.dy = 0;
+        }
       } else {
-        // Normal mode: apply gravity and update vertical position.
         player.dy += gravity;
         player.y += player.dy;
       }
 
-      // Constrain the player within canvas bounds.
       if (player.x < 0) player.x = 0;
       if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
       if (player.y < 0) player.y = 0;
@@ -247,18 +412,13 @@ ui <- fluidPage(
         player.y = canvas.height - groundHeight - player.height;
         player.dy = 0;
         player.onGround = true;
-      } else if (player.isBird && player.y + player.height > canvas.height) {
-        player.y = canvas.height - player.height;
       }
 
-      // Generate obstacles only in normal mode.
       if (!player.isBird && frameCount % obstacleFrequency === 0) {
         createObstacle();
       }
-
       updateObstacles();
 
-      // Check for collisions between the player and obstacles (only in normal mode).
       if (!player.isBird) {
         obstacles.forEach(function(obstacle) {
           if (checkCollision(player, obstacle)) {
@@ -277,13 +437,17 @@ ui <- fluidPage(
       requestAnimationFrame(updateGame);
     }
 
-    // Listen for keydown events.
     document.addEventListener('keydown', function(e) {
+      if (e.code === 'Space' && player.gameOver) {
+        startNewGame();
+        requestAnimationFrame(updateGame);
+        return;
+      }
+
       var currentTime = Date.now();
 
       if (e.code === 'ArrowUp') {
-        if (!player.isBird) {
-          // Rapid up-arrow detection for bird transformation.
+        if (!player.isBird && !player.birdModeEnding) {
           if (currentTime - lastUpKeyTime < keyThreshold) {
             upKeyCount++;
           } else {
@@ -291,31 +455,33 @@ ui <- fluidPage(
           }
           lastUpKeyTime = currentTime;
 
-          // If three rapid up-arrow presses are detected, transform into a bird.
           if (upKeyCount >= 3) {
             player.isBird = true;
             player.dx = 0;
             player.dy = 0;
-            // Revert back to normal mode after 3 seconds.
             setTimeout(function() {
-              player.isBird = false;
-              player.dx = 0;
-              player.dy = 0;
+              if (player.y < canvas.height * 0.2) {
+                player.isBird = false;
+                player.falling = true;
+                player.dx = 0;
+                player.dy = 0;
+              } else {
+                player.isBird = false;
+                player.dx = 0;
+                player.dy = 0;
+              }
             }, 3000);
           }
 
-          // Normal jump if on the ground.
           if (player.onGround) {
             player.dy = player.jumpForce;
             player.onGround = false;
           }
         } else {
-          // In bird mode, pressing the up arrow moves the player upward.
           player.dy = -player.speed;
         }
       }
 
-      // In bird mode, allow full directional control.
       if (player.isBird) {
         if (e.code === 'ArrowDown') {
           player.dy = player.speed;
@@ -329,7 +495,6 @@ ui <- fluidPage(
       }
     });
 
-    // Listen for keyup events in bird mode to stop movement.
     document.addEventListener('keyup', function(e) {
       if (player.isBird) {
         if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
@@ -341,13 +506,11 @@ ui <- fluidPage(
       }
     });
 
-    // Start the game loop.
     updateGame();
   "))
 )
 
 server <- function(input, output, session) {
-  # No server-side logic is needed.
 }
 
 shinyApp(ui, server)
